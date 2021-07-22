@@ -3,6 +3,4 @@ code for reproducing analyses in our paper ["Contextual Flexibility Guides Commu
 
 ## Citation:
 
-```
-Kumar, A., Garg, K., Hawkins, R.D. (2021). Contextual flexibility guides communication in a cooperative language game. Proceedings of the 43rd Annual Conference of the Cognitive Science Society.
-```
+Kumar, A., Garg, K., Hawkins, R.D. (2021). Contextual flexibility guides communication in a cooperative language game. *Proceedings of the 43rd Annual Conference of the Cognitive Science Society.*
