@@ -1,0 +1,246 @@
+---
+title: "Connector-RSA"
+output: pdf_document
+---
+
+# Imports
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+## Note that Rmisc overshadows dplyr with plyr, leading to some bugs, so we have to import it first
+library(Rmisc)
+library(tidyverse)
+library(tidyboot)
+library(ggthemes)
+library(GGally)
+```
+
+# Read in data
+
+These are the empirical data from the connector games.
+
+```{r}
+c <- read_csv("connector_maindata_sims.csv") %>%
+  filter(!is.na(P2W1)) %>%
+  unite(wordpair, Word1, Word2, sep = '-') %>%
+  unite(chosen_wordpair1, P2W1, P2W2, sep = '-', remove = F) %>%
+  unite(chosen_wordpair2, P2W2, P2W1, sep = '-', remove = T) %>%
+  select(Subject, Experiment, wordpair, Trial, Clue1, chosen_wordpair1, chosen_wordpair2) %>%
+  rename(true_wordpair = wordpair)
+
+c_clues = read_csv("final_board_clues_all.csv") %>% 
+  mutate(wordpair = gsub(' - ', '-', wordpair)) %>%
+  distinct()
+```
+
+These are the combined speaker predictions for all models
+
+```{r}
+board_predictions <- read_csv("speaker_boardfunc_df_ranks_softmax.csv") %>%
+  right_join(c_clues %>% select(wordpair, Clue1, clueCount)) %>%
+  filter(!is.na(Model)) %>%
+  mutate(Model = ifelse(Model == 'SWOW-RW', 'swow', tolower(Model))) %>%
+  unite(Model, Model, alpha, sep = '-alpha') %>%
+  select(-X1, -boardnames)
+
+rsa_predictions <- read_csv("speaker_ranks.csv") %>%
+  mutate(Model = paste0(representation, '-alphaRSA'),
+         prag_speaker_rank = gsub('\\[', '', prag_speaker_rank),
+         prag_speaker_rank = as.numeric(gsub('\\]', '', prag_speaker_rank))) %>%
+  rename(clue_score = prag_speaker_probs,
+         clue_rank = prag_speaker_rank) %>%
+  select(Model, wordpair, Clue1, clue_score, clueCount, clue_rank)
+
+speaker_compiled <- bind_rows(board_predictions, rsa_predictions) %>%
+  mutate(wordpair = gsub(' - ', '-', wordpair)) %>%
+  filter(!is.na(clue_score))
+```
+
+These are the listener predictions
+
+```{r}
+guesser_compiled <- read_csv('guesser_scores.csv') %>%
+  mutate(true_wordpair = gsub( " ", "", wordpair)) %>%
+  group_by(representation, Clue1, wordpair) %>%
+  mutate(prag_rank = dense_rank(-prag_likelihood),
+         literal_rank = dense_rank(-literal_likelihood),
+         literal_top_rank = literal_rank == 1, 
+         prag_top_rank = prag_rank == 1) %>%
+  right_join(c, by = c('Clue1', 'true_wordpair')) %>%
+  filter(!is.na(literal_top_prediction)) %>%
+  rowwise() %>%
+  filter(possible_wordpair == chosen_wordpair1 || possible_wordpair == chosen_wordpair2) %>%
+  distinct()
+```
+
+# Speaker analyses
+
+## Log likelihoods
+
+we look at log likelihoods as the most fundamental metric of model comparison
+
+```{r}
+speaker_compiled %>% 
+  mutate(ll = log(clue_score)) %>%
+  group_by(Model) %>%
+  summarize(ll = sum(ll * clueCount, na.rm = T)) %>%
+  arrange(-ll) %>%
+  separate(Model, into = c('model', 'alpha'), sep = '-alpha') %>%
+  mutate(category = case_when(alpha == 'RSA' ~ 'RSA',
+                              alpha == '1' ~ 'target',
+                              TRUE ~ 'board')) %>%
+  group_by(model, category) %>%
+  filter(max(ll) == ll)
+
+```
+
+## Average ranks figure
+
+for a more interpretable measure, we look at the average position of the empirical scores in the model's rankings. this gives some 'absolute' sense of how good these models are doing. Note that we're using a weighted average here. 
+
+```{r}
+speaker_compiled %>%
+  group_by(Model, wordpair) %>%
+  summarize(avg_rank = sum(clue_rank * clueCount)/sum(clueCount)) %>%
+  separate(Model, into = c('model', 'alpha'), sep = '-alpha') %>%
+  mutate(model = ifelse(model == 'bert-sum', 'BERT', ifelse(model == 'swow', 'SWOW', model))) %>%
+  filter(alpha %in% c(0, 0.2, 0.4, 0.6, 0.8, 1, 'RSA')) %>%
+  ggplot(aes(x = alpha, y = log(avg_rank), color = alpha == 'RSA')) +
+    geom_jitter(width = 0.1, height = 0) +
+    geom_boxplot(alpha = .5) +
+    geom_hline(yintercept = c(0, log(12100)), linetype = 'dotted') +
+    labs(y = '(log) rank of clues') +
+    facet_grid(~ model) +
+    ylim(0, 9.5) +
+    theme_few() +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1),
+         aspect.ratio = 1.5,
+         legend.position = 'none') 
+
+ggsave('avg_ranking.pdf', width = 4, height = 2.5, units = 'in')
+```
+
+```{r}
+speaker_compiled %>%
+  group_by(Model) %>%
+  tidyboot_mean(sum(clue_rank * clueCount)/sum(clueCount)) %>%
+  separate(Model, into = c('model', 'alpha'), sep = '-alpha') %>%
+  mutate(category = case_when(alpha == 'RSA' ~ 'RSA',
+                              alpha == '1' ~ 'target',
+                              TRUE ~ 'board')) %>%
+  group_by(model, category) %>%
+  filter(min(empirical_stat) == empirical_stat)
+```
+
+## Top accuracy 
+
+for the table, we look up the proportion of items where the single empirically most frequent word matches the model's single top prediction (well, ok, technically we're looking at the top 5 for simplicity because we didn't exclude the target words themselves from the ranking lists...)
+
+```{r}
+# tidyboot_mean is bootstrapping 95% CIs
+speaker_compiled %>%
+  mutate(top = clue_rank < 5) %>%
+  group_by(Model) %>%
+  tidyboot_mean(sum(top * clueCount)/sum(clueCount)) %>%
+  separate(Model, into = c('type', 'alpha'), sep = '-alpha') %>%
+  mutate(category = case_when(alpha == 'RSA' ~ 'RSA',
+                              alpha == '1' ~ 'target',
+                              TRUE ~ 'board')) %>%
+  group_by(type, category) %>%
+  filter(max(empirical_stat) == empirical_stat)
+```
+
+look at some examples of modal clues (e.g. *glove* models predict 'blow' and 'boat' better but *swow* predicts 'math' and 'test' better)
+
+```{r}
+# These are the ones where one of our models gave a top rank
+speaker_compiled %>% 
+  group_by(wordpair) %>%
+  top_n(1, clueCount) %>%
+  select(wordpair, clue_rank, Model, Clue1) %>%
+  filter(Model %in% c('glove-alpha1', 'swow-alpha1', 'glove-alphaRSA', 'swow-alphaRSA', 'bert-sum-alpha1', 'bert-sum-alphaRSA')) %>%
+  filter(!str_detect(wordpair, Clue1)) %>%
+  filter(clue_rank == 1)
+
+speaker_compiled %>% 
+  filter(wordpair %in% c("exam-algebra")) %>%
+  arrange(wordpair, clue_rank)
+
+speaker_compiled %>% 
+  filter(wordpair %in% c("feet-chapel")) %>%
+  arrange(wordpair, clue_rank)
+
+```
+
+
+## Error analysis
+
+it's interesting that RSA model seems to do slightly worse than the 'pure' alpha = 1 model that completely ignores distractors. let's look at some specific cases to try to understand the errors the RSA model might be making. 
+
+first of all, we see that predictions are pretty highly correlated (r = 0.71) at the item-level.
+
+```{r}
+speaker_compiled %>%
+  filter(Model %in% c('swow-alpha1', 'swow-alphaRSA')) %>%
+  group_by(Model, wordpair) %>%
+  summarize(avg_rank = sum(clue_rank * clueCount)/sum(clueCount)) %>%
+  select(Model, avg_rank, wordpair) %>%
+  spread(Model, avg_rank) %>%
+  select(-wordpair) %>%
+  ggpairs(mapping = aes(alpha = 0.01), lower = list(continuous = "smooth"), progress = F) +
+    ggthemes::theme_few()
+ggsave('correlations.pdf', width = 10, height = 10, units = 'in')
+```
+
+but RSA is *terrible* for some clues. for pairs like 'communicate - cooking', it seems like RSA doesn't want to produce clues like 'food' or 'kitchen' that are good for 'cooking' but not 'communicate'. it ranks these almost at the very bottom. this is more similar to what the alpha = 0.8 model is doing. 
+
+```{r}
+speaker_compiled %>%
+  filter(Model %in% c('swow-alpha1', 'swow-alpha0.8', 'swow-alphaRSA')) %>%
+  filter(wordpair == 'communicate - cooking') %>%
+  select(Model, Clue1, clue_rank, wordpair) %>%
+  spread(Model, clue_rank)
+```
+
+
+# Guesser analyses
+
+
+## Log-likelihood 
+
+```{r}
+guesser_compiled %>% 
+  mutate(prag_ll = log(prag_likelihood),
+         literal_ll = log(literal_likelihood)) %>%
+  gather(process_type, ll, prag_ll, literal_ll) %>%
+  group_by(representation, process_type) %>%
+  summarize(ll = sum(ll, na.rm = T)) %>%
+  arrange(-ll)
+```
+
+## Ranks
+
+```{r}
+guesser_compiled %>%
+  group_by(representation) %>%
+  select(possible_wordpair, chosen_wordpair1, Clue1, ends_with('rank')) %>%
+  gather(model, rank, literal_rank, prag_rank) %>%
+  group_by(representation, model) %>%
+  tidyboot_mean(rank)
+```
+
+## Accuracy
+
+```{r}
+guesser_compiled %>%
+  # group_by(representation, Board, Clue1, chosen_wordpair1, literal_top_rank, prag_top_rank) %>%
+  # tally() %>%
+  # filter(n == max(n)) %>%
+  group_by(representation) %>%
+  select(chosen_wordpair1, Clue1, literal_top_rank, prag_top_rank) %>%
+  gather(model, top, literal_top_rank, prag_top_rank) %>%
+  group_by(representation, model) %>%
+  tidyboot_mean(top)
+```
+
+
