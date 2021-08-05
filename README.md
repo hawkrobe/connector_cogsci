@@ -13,6 +13,10 @@ There are two ways of running our python code:
 
 To run the R Notebook, follow [these instructions](https://www.rstudio.com/products/rstudio/download/) to download and open the RStudio IDE.
 
+# Data
+
+For more information about the data used in this project, see this [OSF repository](https://osf.io/haes8/).
+
 # Citation:
 
 Kumar, A., Garg, K., Hawkins, R.D. (2021). Contextual flexibility guides communication in a cooperative language game. *Proceedings of the 43rd Annual Conference of the Cognitive Science Society.*
