@@ -96,41 +96,43 @@ Trial-level regression
 
 ```{r}
 c.sims %>%
-  group_by(Subject, Trial, representation, comparison) %>%
+  group_by(Subject, Trial, Level, representation, comparison) %>%
   pivot_wider(names_from = comparison, values_from = sim) %>%
-  group_by(representation, Trial, Subject) %>%
-  transmute(c1w1 = 0,
-            c1w2 = max(c1w1_sim, c1w2_sim) - min(c1w1_sim, c1w2_sim),
-            midpoint = c1avg_sim - min(c1w1_sim, c1w2_sim)) %>%
-  pivot_longer(cols = -c(Subject, Trial, representation), names_to = 'comparison') %>%
-
-ggplot(aes(x = comparison, y = empirical_stat, color = representation, group = representation)) + 
-    geom_point(size = 2) + 
-    geom_line(size = 1)+
-    geom_hline(yintercept = 0, linetype = 'dotted') +
-    scale_color_solarized() +
-    labs(x = "", y = "cosine similarity") +
-    facet_wrap(~ clue) +
-    theme_few()+
-    theme(aspect.ratio = 1)
+  group_by(representation, Trial, Level, Subject) %>%
+  transmute(tocloser_clue1 = max(c1w1_sim, c1w2_sim) - min(c1w1_sim, c1w2_sim),
+            tomidpoint_clue1 = c1avg_sim - min(c1w1_sim, c1w2_sim),
+            tocloser_clue2 = max(c2w1_sim, c2w2_sim) - min(c2w1_sim, c2w2_sim),
+            tomidpoint_clue2 = c2_w1w2avg_sim - min(c2w1_sim, c2w2_sim)) %>%
+  pivot_longer(cols = -c(Subject, Trial, Level, representation), names_to = 'comparison') %>%
+  separate(comparison, into = c('comparison', 'clue')) %>%
+  ungroup() %>%
+  mutate(comparison = fct_relevel(factor(comparison), 'closer')) %>%
+  ggplot(aes(x = Level, y = value, color = comparison)) + 
+     geom_point(position = position_dodge(0.9), size = 1, alpha = 0.01) +
+      geom_boxplot(alpha =0.1,position = position_dodge(0.9))+
+      geom_hline(yintercept = 0, linetype = 'dotted') +
+      scale_color_solarized() +
+      facet_grid(clue ~ representation, scales = 'free') +
+      labs(x = "", y = "cosine similarity") +
+      theme_few()+
+      theme(aspect.ratio = 1)
+ggsave('by-difficulty.pdf')
 
 c.sims %>%
-  group_by(Subject, Trial, representation, comparison) %>%
+  group_by(Subject, Trial, Level, CorrectAnswer, representation, comparison) %>%
   pivot_wider(names_from = comparison, values_from = sim) %>%
-  group_by(representation, Trial, Subject) %>%
-  transmute(c1w1 = min(c1w1_sim, c1w2_sim),
-            c1w2 = max(c1w1_sim, c1w2_sim),
-            midpoint = c1avg_sim) %>%
-  pivot_longer(cols = -c(Subject, Trial, representation), names_to = 'comparison') %>%
+  group_by(representation, Trial,Level, CorrectAnswer, Subject) %>%
+  transmute(c1w2 = max(c1w1_sim, c1w2_sim) - min(c1w1_sim, c1w2_sim),
+            midpoint = c1avg_sim - min(c1w1_sim, c1w2_sim)) %>%
+  pivot_longer(cols = -c(Subject, Trial, Level, CorrectAnswer, representation), names_to = 'comparison') %>%
   nest(-representation) %>% 
   mutate(results = map(data, ~ {
-     lmer(value ~ comparison + (1 | Subject), 
-          contrasts = list(comparison = contr.treatment(3, base = 2)),
+     lmer(value ~ comparison * Level + (1 | Subject) + (1 + comparison | CorrectAnswer), 
           data = .) %>% 
       broom.mixed::tidy()
     })) %>%
   unnest(results) %>%
-  filter(term %in% c('comparison1', 'comparison3'))
+  filter(effect == 'fixed')
 ```
 
 Subject-level regression
