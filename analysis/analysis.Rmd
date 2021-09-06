@@ -45,273 +45,139 @@ c.sims = read_csv(here("../data/descriptive_precomputed.csv")) %>%
          representation = fct_relevel(representation, "GloVe", "BERT", "SWOW")) 
 ```
 
-## Fig 2: Clue 1 
-
-First we look at whether Clue1 is close to W1, W2, or the midpoint (W1+W2/2)
+## Fig.2: Clue 1 
 
 ```{r}
-clue.dist <- c.sims %>%
-  group_by(Subject, representation, comparison) %>%
-  summarise(sim = mean(sim, na.rm = TRUE)) %>%
-  pivot_wider(names_from = comparison, values_from = sim) %>%
-  transmute(baseline_c1 = min(c1w1_sim, c1w2_sim), 
-         word1_c1 = min(c1w1_sim, c1w2_sim) - baseline_c1, 
-         word2_c1 = max(c1w1_sim, c1w2_sim) - baseline_c1,
-         midpoint_c1 = c1avg_sim - baseline_c1,
-         baseline_c2 = min(c2w1_sim, c2w2_sim),
-         word1_c2 = min(c2w1_sim, c2w2_sim) - baseline_c2,
-         word2_c2 = max(c2w1_sim, c2w2_sim) - baseline_c2,
-         midpoint_c2 = c2_w1w2avg_sim - baseline_c2,
-         centroid_c2 = c2_c1avg_sim - baseline_c2) %>%
-  pivot_longer(cols = -c(Subject, representation), names_to = 'comparison') %>%
-  separate(comparison, into = c('comparison', 'clue'))
 
-clue.dist %>%
-  group_by(representation, comparison, clue) %>%
-  tidyboot_mean(value) %>%
-  filter(comparison != 'baseline') %>%
-  ungroup() %>%
-  mutate(comparison = fct_relevel(comparison, "word1", "word2", "midpoint", "centroid")) %>%
-  ggplot(aes(x = comparison, y = empirical_stat, color = representation, group = representation)) + 
-    geom_errorbar(aes(ymin=ci_lower, ymax=ci_upper), size = 0.5, width=0, 
+## plot of clue 1 to midpoint and w1w2
+
+c.sims %>%
+  group_by(Subject, wordpair, representation, comparison) %>%
+  pivot_wider(names_from = comparison, values_from = sim) %>%
+  group_by(representation, wordpair, Subject) %>%
+  transmute(`farther\nword` = min(c1w1_sim, c1w2_sim),
+            `closer\nword` = max(c1w1_sim, c1w2_sim),
+            midpoint = c1avg_sim) %>%
+  pivot_longer(cols = -c(Subject, wordpair, representation), names_to = 'comparison') %>%
+  Rmisc::summarySE(data = .,
+                   measurevar = "value", groupvars = c("representation", "comparison"),
+                   na.rm = TRUE) %>%
+  mutate(comparison = fct_relevel(comparison, "farther\nword", "closer\nword", "midpoint"),
+         type = "first clue to target words and midpoint",
+           representation = fct_relevel(representation, "BERT", "SWOW", "GloVe")) %>%
+  ggplot(aes(x = comparison, y = value, color = representation, group = representation)) +
+        geom_errorbar(aes(ymin=value - ci, ymax=value + ci), width=0.1, size = 1,
                   color = "gray26", position = position_dodge(0))+
     geom_point(size = 2) + 
     geom_line(size = 1)+
-    geom_hline(yintercept = 0, linetype = 'dotted') +
     scale_color_solarized() +
     labs(x = "", y = "cosine similarity") +
-    facet_wrap(~ clue) +
+  ggtitle("first clue to target words\nand midpoint")+
     theme_few()+
-    theme(aspect.ratio = 1)
+      ylim(0.1, 0.8) +
+    theme(aspect.ratio = 1)+
+  theme( axis.text.x = element_text( size = rel(2)),
+         axis.text.y = element_text(size = rel(2)),
+         strip.text.y = element_text(face = "bold", size = rel(1.3)),
+     axis.title = element_text( size = rel(2)),
+          legend.title = element_text( size = rel(2)),
+     legend.text = element_text( size = rel(1.8)),
+         plot.title = element_text(hjust = .5, size = rel(1.8)),
+         strip.text.x = element_text(face = "bold", size = rel(1)))
 
-ggsave('combined_similarities.pdf', width = 5, height = 4, units = 'in')
-```
+## plot of clue1 to midpoint across easy/med/hard
 
-## Item Level
-
-### Figure 2
-
-```{r}
-clue1_plotdata = c.sims %>%
-  group_by(representation, wordpair, Clue1, comparison) %>%
-summarise(sim = mean(sim, na.rm = TRUE)) %>%
-  mutate(sim = ifelse(is.nan(sim), NA, sim)) %>%
-  pivot_wider(names_from = comparison, values_from = sim)  %>%
-  transmute(baseline_c1 = min(c1w1_sim,c1w2_sim), 
-         farther_c1 = min(c1w1_sim, c1w2_sim) - baseline_c1, 
-         closer_c1 = max(c1w1_sim, c1w2_sim) - baseline_c1,
-         midpoint_c1 = c1avg_sim - baseline_c1) %>%
-  pivot_longer(cols = -c(wordpair, representation, Clue1), names_to = 'comparison') %>%
-  separate(comparison, into = c('comparison', 'clue')) %>% 
-  group_by(representation, comparison, clue) %>%
-  tidyboot_mean(value, na.rm = TRUE) %>%
-  filter(comparison != 'baseline') %>%
-  ungroup() %>%
-  mutate(comparison = fct_relevel(comparison, "farther", "closer", "midpoint")) 
-
-clue2_plotdata = c.sims %>%
-  group_by(representation, wordpair, Clue1, Clue2, comparison) %>%
-summarise(sim = mean(sim, na.rm = TRUE)) %>%
-  mutate(sim = ifelse(is.nan(sim), NA, sim)) %>%
-  pivot_wider(names_from = comparison, values_from = sim)  %>%
-  transmute(baseline_c2 = min(c2w1_sim, c2w2_sim),
-         farther_c2 = min(c2w1_sim, c2w2_sim) - baseline_c2,
-         closer_c2 = max(c2w1_sim, c2w2_sim) - baseline_c2,
-         midpoint_c2 = c2_w1w2avg_sim - baseline_c2,
-         centroid_c2 = c2_c1avg_sim - baseline_c2) %>%
-  pivot_longer(cols = -c(wordpair, representation, Clue1, Clue2), names_to = 'comparison') %>%
-  separate(comparison, into = c('comparison', 'clue')) %>% 
-  group_by(representation, comparison, clue) %>%
-  tidyboot_mean(value, na.rm = TRUE) %>%
-  filter(comparison != 'baseline') %>%
-  ungroup() %>%
-  mutate(comparison = fct_relevel(comparison, "farther", "closer", "midpoint", "centroid")) 
-
-rbind(clue1_plotdata, clue2_plotdata) %>%
-  ggplot(aes(x = comparison, y = empirical_stat, color = representation, group = representation)) + 
-    geom_errorbar(aes(ymin=ci_lower, ymax=ci_upper), size = 0.5, width=0, 
+c.sims %>%
+  group_by(Subject, Level, wordpair, representation, comparison) %>%
+  pivot_wider(names_from = comparison, values_from = sim) %>%
+  group_by(representation, Level, wordpair, Subject) %>%
+  transmute(midpoint = c1avg_sim) %>%
+  pivot_longer(cols = -c(Subject, Level, wordpair, representation), names_to = 'comparison') %>%
+  Rmisc::summarySE(data = .,
+                   measurevar = "value", groupvars = c("representation", "Level", "comparison"),
+                   na.rm = TRUE) %>%
+  mutate(comparison = fct_relevel(Level, "Easy", "Medium", "Hard")) %>%
+  select(-Level)%>%
+  mutate(comparison = fct_recode(comparison, 
+  `close\npair` = "Easy", `medium\npair` = "Medium", `distant\npair` =  "Hard"),
+  type = "first clue to midpoint across target pair distance",
+  representation = fct_relevel(representation, "BERT", "SWOW", "GloVe")) %>%
+  ggplot(aes(x = comparison, y = value, color = representation, group = representation)) + 
+          geom_errorbar(aes(ymin=value - ci, ymax=value + ci), width=0.1, size = 1,
                   color = "gray26", position = position_dodge(0))+
     geom_point(size = 2) + 
     geom_line(size = 1)+
-    geom_hline(yintercept = 0, linetype = 'dotted') +
     scale_color_solarized() +
     labs(x = "", y = "cosine similarity") +
-    facet_wrap(~ clue) +
     theme_few()+
-    theme(aspect.ratio = 1)
+        ylim(0.1, 0.8) +
+    theme(aspect.ratio = 1)+
+  ggtitle("first clue to midpoint across\ntarget pair distance")+
+  theme( axis.text.x = element_text( size = rel(2)),
+         axis.text.y = element_text(size = rel(2)),
+         strip.text.y = element_text(face = "bold", size = rel(1.3)),
+     axis.title = element_text( size = rel(2)),
+          legend.title = element_text( size = rel(2)),
+     legend.text = element_text( size = rel(1.8)),
+         plot.title = element_text(hjust = .5, size = rel(1.8)),
+         strip.text.x = element_text(face = "bold", size = rel(1)))
+
+
 
 ```
 
-
-### lmer: clue 1
-
-```{r}
-clue1_lmer_model = c.sims %>%
-  group_by(representation, wordpair, Clue1, comparison) %>%
-pivot_wider(names_from = comparison, values_from = sim) %>%
-   group_by(representation, wordpair, Clue1) %>%
-   transmute(c1w1 = min(c1w1_sim, c1w2_sim),
-             c1w2 = max(c1w1_sim, c1w2_sim),
-             midpoint = c1avg_sim) %>%
-   pivot_longer(cols = -c(wordpair, Clue1, representation), names_to = 'comparison') %>%
-  nest(-representation) %>%
-  mutate(results = map(data, ~ {
-     lmer(value ~ comparison + (1 | wordpair),
-          contrasts = list(comparison = contr.treatment(3, base = 2)),
-          data = .) %>%
-      broom.mixed::tidy()
-    })) %>%
-  unnest(results)
-
-```
-
-### lmer: clue 2
+## Clue 1 Stats
 
 ```{r}
-clue2_lmer_model = c.sims %>%
-  group_by(representation, wordpair, Clue1, Clue2, comparison) %>%
-pivot_wider(names_from = comparison, values_from = sim) %>%
-   group_by(representation, wordpair, Clue1, Clue2) %>%
-   transmute(c1w1 = min(c2w1_sim, c2w2_sim),
-             c1w2 = max(c2w1_sim, c2w2_sim),
-             midpoint = c2_w1w2avg_sim,
-             centroid = c2_c1avg_sim) %>%
-   pivot_longer(cols = -c(wordpair, Clue1, Clue2, representation), names_to = 'comparison') %>%
-  nest(-representation) %>%
-  mutate(results = map(data, ~ {
-     lmer(value ~ comparison + (1 | wordpair),
-          contrasts = list(comparison = contr.treatment(4, base = 2)),
-          data = .) %>%
-      broom.mixed::tidy()
-    })) %>%
-  unnest(results)
+## ranef of whether first clue is closer to midpoint/w1/w2
 
-```
-
-
-## Statistical tests
-
-### Clue 1
-
-Trial-level regression
-
-```{r}
-c.sims %>%
-  group_by(Subject, Trial, Level, representation, comparison) %>%
+clue1_ranef_data = c.sims %>%
+  group_by(Subject, Level, wordpair, representation, comparison) %>%
   pivot_wider(names_from = comparison, values_from = sim) %>%
-  group_by(representation, Trial, Level, Subject) %>%
-  transmute(tocloser_clue1 = max(c1w1_sim, c1w2_sim) - min(c1w1_sim, c1w2_sim),
-            tomidpoint_clue1 = c1avg_sim - min(c1w1_sim, c1w2_sim),
-            tocloser_clue2 = max(c2w1_sim, c2w2_sim) - min(c2w1_sim, c2w2_sim),
-            tomidpoint_clue2 = c2_w1w2avg_sim - min(c2w1_sim, c2w2_sim)) %>%
-  pivot_longer(cols = -c(Subject, Trial, Level, representation), names_to = 'comparison') %>%
-  separate(comparison, into = c('comparison', 'clue')) %>%
-  ungroup() %>%
-  mutate(comparison = fct_relevel(factor(comparison), 'closer')) %>%
-  ggplot(aes(x = Level, y = value, color = comparison)) + 
-     geom_point(position = position_dodge(0.9), size = 1, alpha = 0.01) +
-      geom_boxplot(alpha =0.1,position = position_dodge(0.9))+
-      geom_hline(yintercept = 0, linetype = 'dotted') +
-      scale_color_solarized() +
-      facet_grid(clue ~ representation, scales = 'free') +
-      labs(x = "", y = "cosine similarity") +
-      theme_few()+
-      theme(aspect.ratio = 1)
-ggsave('by-difficulty.pdf')
-
-c.sims %>%
-  group_by(Subject, Trial, Level, CorrectAnswer, representation, comparison) %>%
-  pivot_wider(names_from = comparison, values_from = sim) %>%
-  group_by(representation, Trial,Level, CorrectAnswer, Subject) %>%
-  transmute(c1w2 = max(c1w1_sim, c1w2_sim) - min(c1w1_sim, c1w2_sim),
-            midpoint = c1avg_sim - min(c1w1_sim, c1w2_sim)) %>%
-  pivot_longer(cols = -c(Subject, Trial, Level, CorrectAnswer, representation), names_to = 'comparison') %>%
+  group_by(representation, wordpair, Subject) %>%
+  transmute(c1w1 = min(c1w1_sim, c1w2_sim),
+            c1w2 = max(c1w1_sim, c1w2_sim),
+            midpoint = c1avg_sim) %>%
+  pivot_longer(cols = -c(Subject, wordpair, representation), names_to = 'comparison') %>%
   nest(-representation) %>% 
   mutate(results = map(data, ~ {
-     lmer(value ~ comparison * Level + (1 | Subject) + (1 + comparison | CorrectAnswer), 
+     lmer(value ~ comparison + (1 | Subject) + (1|wordpair), 
+          contrasts = list(comparison = contr.treatment(3, base = 2)),
           data = .) %>% 
       broom.mixed::tidy()
     })) %>%
   unnest(results) %>%
-  filter(effect == 'fixed')
+  filter(term %in% c('comparison1', 'comparison3'))
+  
+
+## ranef of clue1 proximity to midpoint as a function of difficulty
+
+ c.sims %>%
+  group_by(Subject, Level, wordpair, representation, comparison) %>%
+  pivot_wider(names_from = comparison, values_from = sim) %>%
+  group_by(representation, wordpair, Subject, Level) %>%
+  transmute(midpoint = c1avg_sim) %>%
+  pivot_longer(cols = -c(Subject, Level, wordpair, representation), names_to = 'comparison') %>%
+  nest(-representation) %>% 
+  mutate(results = map(data, ~ {
+     lmer(value ~ Level + (1 | Subject) + (1|wordpair), 
+          contrasts = list(Level = contr.treatment(3, base = 2)),
+          data = .) %>% 
+      broom.mixed::tidy()
+    })) %>%
+  unnest(results) %>%
+  filter(term %in% c('Level1', 'Level3'))
 ```
 
-Subject-level regression
 
-```{r}
-c.subj.df.c1 <- clue.dist %>%
-  filter(clue == 'c1') %>% 
-  filter(comparison != 'baseline') %>%
-  pivot_wider(names_from = comparison, values_from = value) 
-
-## model-wise
-bert_c1 = c.subj.df.c1 %>% filter(representation %in% "BERT") 
-swow_c1 = c.subj.df.c1 %>% filter(representation %in% "SWOW")
-glove_c1 = c.subj.df.c1 %>% filter(representation %in% "GloVe")
-
-t.test(bert_c1$word1, bert_c1$word2, paired = TRUE) #n.s.
-t.test(bert_c1$word2, bert_c1$midpoint, paired = TRUE) #sig**
-
-t.test(glove_c1$word1, glove_c1$word2, paired = TRUE) #n.s.
-t.test(glove_c1$word2, glove_c1$midpoint, paired = TRUE) #sig**
-
-t.test(swow_c1$word1, swow_c1$word2, paired = TRUE) #n.s.
-t.test(swow_c1$word2, swow_c1$midpoint, paired = TRUE) #sig**
-```
-
-### Clue 2
-
-```{r}
-
-c.dist.df.c2 <- c.sims %>%
-  group_by(Subject, representation, comparison) %>%
-  summarise(sim = mean(sim, na.rm = TRUE)) %>%
- pivot_wider(names_from = comparison, values_from = sim) %>%
-   mutate(baseline = (c2w1_sim + c2w2_sim) / 2) %>%
-   pivot_longer(cols = -c(Subject, representation, baseline), names_to = 'comparison') %>%
-   mutate(sim = value - baseline) %>%
-   group_by(representation, comparison)
-
-## restrict to clue2 metrics only
-
-c.dist.df.c2 = c.dist.df.c2 %>%
-  filter(comparison %in% c("c2w1_sim","c2w2_sim", "c2_w1w2avg_sim", "c2_c1avg_sim"))%>%
-  select(-c(value, baseline)) %>%
-  pivot_wider(names_from = comparison, values_from = sim) 
-
-## model-wise
-bert_c2 = c.dist.df.c2 %>% filter(representation %in% "bert-sum")
-swow_c2 = c.dist.df.c2 %>% filter(representation %in% "swow")
-glove_c2 = c.dist.df.c2 %>% filter(representation %in% "glove")
-
-## bert
-t.test(bert_c2$c2w1_sim, bert_c2$c2w2_sim, paired = TRUE) #sig**
-t.test(bert_c2$c2w1_sim, bert_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-t.test(bert_c2$c2w2_sim, bert_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-t.test(bert_c2$c2_c1avg_sim, bert_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-
-## glove
-t.test(glove_c2$c2w1_sim, glove_c2$c2w2_sim, paired = TRUE) #n.s.
-t.test(glove_c2$c2w1_sim, glove_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-t.test(glove_c2$c2w2_sim, glove_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-t.test(glove_c2$c2_c1avg_sim, glove_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-
-## swow
-t.test(swow_c2$c2w1_sim, swow_c2$c2w2_sim, paired = TRUE) #n.s.
-t.test(swow_c2$c2w1_sim, swow_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-t.test(swow_c2$c2w2_sim, swow_c2$c2_w1w2avg_sim, paired = TRUE) #sig**
-t.test(swow_c2$c2_c1avg_sim, swow_c2$c2_w1w2avg_sim, paired = TRUE) #sig** but opposite direction
-## clue2 closer to midpoint than centroid in SWOW
-
-```
-
-## Fig 3: Second Attempt (Clue2)
+## Fig 3: Clue 2
 
 Here we restrict analyses to only those trials where at least one of the target words was guessed correctly.
 
 ```{r}
 
-clue2_main = read_csv(here("../data/descriptive_precomputed.csv")) %>% filter(Clue2 != "na" & Clue2 != "") %>%
+clue2_main = read_csv(here("../data/descriptive_precomputed.csv")) %>% 
+  filter(Clue2 != "na" & Clue2 != "") %>%
   rowwise() %>% 
   mutate(w1_guessed = as.numeric(str_detect(Word1, P2W1) | str_detect(Word1, P2W2)),
          w2_guessed = as.numeric(str_detect(Word2, P2W1) | str_detect(Word2, P2W2)),
@@ -325,7 +191,7 @@ clue2_main$glove_c2_sim_guessed = ifelse(clue2_main$w1_guessed == 1,
                                       clue2_main$glove_c2w1_sim, clue2_main$glove_c2w2_sim)
 clue2_main$glove_c2_sim_unguessed = ifelse(clue2_main$w1_guessed == 0, 
                                       clue2_main$glove_c2w1_sim, clue2_main$glove_c2w2_sim)
-clue2_main$glove_c2_sim_composite = clue2_main$glove_c2_w1w2avg_sim
+clue2_main$glove_c2_sim_composite = clue2_main$glove_c2_c1avg_sim
 
 ## swow
 
@@ -333,7 +199,7 @@ clue2_main$swow_c2_sim_guessed = ifelse(clue2_main$w1_guessed == 1,
                                       clue2_main$swow_c2w1_sim, clue2_main$swow_c2w2_sim)
 clue2_main$swow_c2_sim_unguessed = ifelse(clue2_main$w1_guessed == 0, 
                                       clue2_main$swow_c2w1_sim, clue2_main$swow_c2w2_sim)
-clue2_main$swow_c2_sim_composite = clue2_main$swow_c2_w1w2avg_sim
+clue2_main$swow_c2_sim_composite = clue2_main$swow_c2_c1avg_sim
 
 ## bert
 
@@ -343,30 +209,30 @@ clue2_main$bert_c2_sim_guessed = ifelse(clue2_main$w1_guessed == 1,
 clue2_main$bert_c2_sim_unguessed = ifelse(clue2_main$w1_guessed == 0, 
                                       clue2_main$`bert-sum_c2w1_sim`,
                                       clue2_main$`bert-sum_c2w2_sim`)
-clue2_main$bert_c2_sim_composite = clue2_main$`bert-sum_c2_w1w2avg_sim`
+clue2_main$bert_c2_sim_composite = clue2_main$`bert-sum_c2_c1avg_sim`
 
 ## selecting only similarities
-clue2_sims = clue2_main %>% select(Subject, Word1, Word2, Clue1, Clue2,
+clue2_sims = clue2_main %>% select(Subject, Level, Word1, Word2, Clue1, Clue2,
                              glove_c2_sim_guessed:bert_c2_sim_composite) %>%
-  pivot_longer(cols = -c(Subject, Word1, Word2, Clue1, Clue2), names_to = 'comparison')%>%
+  pivot_longer(cols = -c(Subject, Word1, Word2, Level, Clue1, Clue2), names_to = 'comparison')%>%
    separate(comparison, into = c("Representation", "Clue", "Sim", "Type"))
 
-sims_rmisc= Rmisc::summarySE(clue2_sims,
+## plot of clue 2 against guessed/unguessed/composite
+
+Rmisc::summarySE(clue2_sims,
                              measurevar = "value",
-                             groupvars = c("Representation", "Type", "Clue"), na.rm = TRUE) 
-
-sims_rmisc$Type = ordered(as.factor(sims_rmisc$Type), 
-                          levels = c("guessed", "unguessed", "composite"))
-
-sims_rmisc %>% filter(Clue == "c2") %>%
-  mutate(Representation = fct_recode(Representation, 
+                          groupvars = c("Representation","Type", "Clue"), na.rm = TRUE)%>%
+mutate(Representation = fct_recode(Representation, 
                                      BERT = "bert", GloVe = "glove", SWOW = "swow"),
-         Representation = fct_relevel(Representation, "GloVe", "BERT", "SWOW")) %>%
+         Representation = fct_relevel(Representation, "BERT", "SWOW", "GloVe"),
+       Type = fct_relevel(Type, "guessed", "unguessed", "composite"),
+         Type = fct_recode(Type, centroid = "composite", `guessed\nword` = "guessed",
+                           `unguessed\nword` = "unguessed")) %>%
 ggplot(aes(x = Type, y = value,
            group = Representation, color = Representation)) + 
   geom_point(size = 2) + 
   geom_line(size = 1)+
- geom_errorbar(aes(ymin=value - se, ymax=value + se), 
+ geom_errorbar(aes(ymin=value - ci, ymax=value + ci), 
              size = 0.5, width=0, 
                   color = "gray26", position = position_dodge(0))+
  theme_few()+
@@ -374,41 +240,92 @@ ggplot(aes(x = Type, y = value,
     labs(x = "", y = "cosine similarity") +
     ggtitle("Clue 2")+
     theme_few()+
-  ggtitle("Similarity of Clue 2")+
-   theme( axis.text.x = element_text(face = "bold", size = rel(2)),
-         axis.text.y = element_text(face = "bold", size = rel(2)),
+  ylim(.2, .8)+
+  ggtitle("second clue to target words\nand centroid")+
+      theme(aspect.ratio = 1)+
+   theme( axis.text.x = element_text( size = rel(2)),
+         axis.text.y = element_text(size = rel(2)),
          strip.text.y = element_text(face = "bold", size = rel(1.3)),
-     axis.title = element_text(face = "bold", size = rel(2)),
-          legend.title = element_text(face = "bold", size = rel(2)),
-     legend.text = element_text(face = "bold", size = rel(1.8)),
-         plot.title = element_text(hjust = .5),
-         strip.text.x = element_text(face = "bold", size = rel(1.4)))
+     axis.title = element_text( size = rel(2)),
+          legend.title = element_text( size = rel(2)),
+     legend.text = element_text( size = rel(1.8)),
+         plot.title = element_text(hjust = .5, size = rel(1.8)),
+         strip.text.x = element_text(face = "bold", size = rel(1)))
+
+## plot of clue2 against composite and easy/med/hard
+
+Rmisc::summarySE(clue2_sims,
+                             measurevar = "value",
+                    groupvars = c("Representation", "Level", "Type", "Clue"), na.rm = TRUE) %>%
+filter(Type == "composite") %>%
+  mutate(Representation = fct_recode(Representation, 
+                                     BERT = "bert", GloVe = "glove", SWOW = "swow"),
+         Representation = fct_relevel(Representation, "BERT", "SWOW", "GloVe")) %>%
+    mutate(Level = fct_relevel(Level, "Easy", "Medium", "Hard"),
+           Level = fct_recode(Level, 
+  `close\npair` = "Easy", `medium\npair` = "Medium", `distant\npair` =  "Hard")) %>%
+ggplot(aes(x = Level, y = value,
+           group = Representation, color = Representation)) + 
+  geom_point(size = 2) + 
+  geom_line(size = 1)+
+ geom_errorbar(aes(ymin=value - ci, ymax=value + ci), 
+             size = 0.5, width=0, 
+                  color = "gray26", position = position_dodge(0))+
+ theme_few()+
+  scale_color_solarized()+
+    labs(x = "", y = "cosine similarity") +
+    ggtitle("Clue 2")+
+    theme_few()+
+    ylim(.2, .8)+
+  ggtitle("second clue to centroid across\ntarget pair distance")+
+      theme(aspect.ratio = 1)+
+   theme( axis.text.x = element_text( size = rel(2)),
+         axis.text.y = element_text(size = rel(2)),
+         strip.text.y = element_text(face = "bold", size = rel(1.3)),
+     axis.title = element_text( size = rel(2)),
+          legend.title = element_text( size = rel(2)),
+     legend.text = element_text( size = rel(1.8)),
+         plot.title = element_text(hjust = .5, size = rel(1.8)),
+         strip.text.x = element_text(face = "bold", size = rel(1)))
 
 ```
 
-## Clue 2 Tests
+## Clue 2 Stats
 
 ```{r}
-clue2_testdata =  clue2_sims %>%
-  filter(Clue == "c2") %>%
-  pivot_wider(names_from = Type, values_from = value  )
+## ranef of whether second clue is closer to centroid/w1/w2
 
-clue2_bert = clue2_testdata %>% filter(Representation == "bert")
-clue2_glove = clue2_testdata %>% filter(Representation == "glove")
-clue2_swow = clue2_testdata %>% filter(Representation == "swow")
+clue2_ranef_data = clue2_sims %>%
+unite("wordpair", Word1, Word2, sep = '-') %>%
+  mutate(Type = fct_relevel(Type, "guessed", "unguessed", "composite"))%>%
+  nest(-Representation) %>% 
+  mutate(results = map(data, ~ {
+     lmer(value ~ Type + (1 | Subject) + (1|wordpair), 
+          contrasts = list(Type = contr.treatment(3, base = 2)),
+          data = .) %>% 
+      broom.mixed::tidy()
+    })) %>%
+  unnest(results) %>%
+  select(-data)%>%
+  filter(term %in% c('Type1', 'Type3'))
 
-## clue2 closer to unguessed vs. guessed vs. composite
+## ranef of clue2 proximity to centroid as a function of difficulty
 
-t.test(clue2_bert$unguessed, clue2_bert$guessed) # sig.
-t.test(clue2_bert$composite, clue2_bert$unguessed) #sig.
+clue2_sims %>%
+unite("wordpair", Word1, Word2, sep = '-') %>%
+  filter(Type == "composite") %>%
+    mutate(Level = fct_relevel(Level, "Easy", "Medium", "Hard"))%>%
+  nest(-Representation) %>% 
+  mutate(results = map(data, ~ {
+     lmer(value ~ Level + (1|wordpair), 
+          contrasts = list(Level = contr.treatment(3, base = 2)),
+          data = .) %>% 
+      broom.mixed::tidy()
+    })) %>%
+  unnest(results) %>%
+  select(-data)%>%
+  filter(term %in% c('Level1',  'Level3'))
 
-
-t.test(clue2_glove$unguessed, clue2_glove$guessed) # sig.
-t.test(clue2_glove$composite, clue2_glove$unguessed) #sig.
-
-
-t.test(clue2_swow$unguessed, clue2_swow$guessed) # sig
-t.test(clue2_swow$composite, clue2_swow$unguessed) #sig., opposite direction
 ```
 
 # Model comparison
@@ -666,4 +583,57 @@ speaker_compiled %>%
   spread(Model, clue_rank)
 ```
 
+## Clue 2 (descriptive)
 
+```{r}
+## plot of clue 1 to midpoint and w1w2
+
+c.sims %>%
+  group_by(Subject, wordpair, representation, comparison) %>%
+  pivot_wider(names_from = comparison, values_from = sim) %>%
+  group_by(representation, wordpair, Subject) %>%
+  transmute(c2w1 = min(c2w1_sim, c2w2_sim),
+            c2w2 = max(c2w1_sim, c2w2_sim),
+            midpoint = c2_w1w2avg_sim,
+            centroid = c2_c1avg_sim) %>%
+  pivot_longer(cols = -c(Subject, wordpair, representation), names_to = 'comparison') %>%
+  group_by(representation, comparison) %>%
+  summarise_at(vars(value), mean, na.rm = TRUE)  %>%
+  ungroup()  %>%
+  mutate(comparison = fct_relevel(comparison, "c2w1", "c2w2", "midpoint", "centroid")) %>%
+  ggplot(aes(x = comparison, y = value, color = representation, group = representation)) + 
+    geom_point(size = 2) + 
+    geom_line(size = 1)+
+    scale_color_solarized() +
+    labs(x = "", y = "cosine similarity") +
+  ggtitle("second clue to w1, w2, and midpoint")+
+    theme_few()+
+    theme(aspect.ratio = 1)
+
+## plot of clue2 to midpoint across easy/med/hard
+
+c.sims %>%
+  group_by(Subject, Level, wordpair, representation, comparison) %>%
+  pivot_wider(names_from = comparison, values_from = sim) %>%
+  group_by(representation, Level, wordpair, Subject) %>%
+  transmute(c2w1 = min(c2w1_sim, c2w2_sim),
+            c2w2 = max(c2w1_sim, c2w2_sim),
+            midpoint = c2_w1w2avg_sim,
+            centroid = c2_c1avg_sim) %>%
+  pivot_longer(cols = -c(Subject, Level, wordpair, representation), names_to = 'comparison') %>%
+  group_by(representation, Level, comparison) %>%
+  summarise_at(vars(value), mean, na.rm = TRUE)  %>%
+  ungroup()  %>%
+  mutate(comparison = fct_relevel(comparison, "c2w1", "c2w2", "midpoint"),
+         Level = fct_relevel(Level, "Easy", "Medium", "Hard")) %>%
+  filter(comparison %in% c("midpoint", "centroid"))  %>%
+  ggplot(aes(x = Level, y = value, color = representation, group = representation)) + 
+    geom_point(size = 2) + 
+    geom_line(size = 1)+
+    scale_color_solarized() +
+    labs(x = "word-pair difficulty", y = "cosine similarity") +
+  ggtitle("second clue to midpoint/centroid")+
+    theme_few()+
+  facet_wrap(~comparison)+
+    theme(aspect.ratio = 1)
+```
