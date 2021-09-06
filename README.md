@@ -1,5 +1,5 @@
 # connector_cogsci
-code for reproducing analyses in our paper ["Contextual Flexibility Guides Communication in a Cooperative Language Game"](https://rxdhawkins.files.wordpress.com/2021/05/cogsci21a-sub1142-cam-i9.pdf)
+code for reproducing analyses in our paper ["Contextual Flexibility Guides Communication in a Cooperative Language Game"](http://abhilashak.weebly.com/uploads/5/9/6/0/59603701/kumar_garg_hawkins_2021.pdf)
 
 # Instructions
 
